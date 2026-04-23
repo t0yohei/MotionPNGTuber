@@ -933,10 +933,16 @@ class App(tk.Tk):
         self.after(0, _apply)
 
     def _show_error(self, title: str, msg: str) -> None:
-        messagebox.showerror(title, msg)
+        if threading.current_thread() is threading.main_thread():
+            messagebox.showerror(title, msg)
+        else:
+            self.ui_task_q.put(("show_error", (title, msg)))
 
     def _show_warn(self, title: str, msg: str) -> None:
-        messagebox.showwarning(title, msg)
+        if threading.current_thread() is threading.main_thread():
+            messagebox.showwarning(title, msg)
+        else:
+            self.ui_task_q.put(("show_warn", (title, msg)))
 
     def _apply_preview_selection(self, pad: float, coverage: float) -> None:
         pad_v = round(float(pad), 2)
