@@ -1365,15 +1365,28 @@ class App(tk.Tk):
                 self.log(f"[debug] after _resolve_mouth_root is_none={mouth_dir is None}")
                 if mouth_dir is None:
                     return
+                print("[debug] before _resolve_character_for_action", flush=True)
+                self.log("[debug] before _resolve_character_for_action")
                 char = self._resolve_character_for_action()
+                print(f"[debug] after _resolve_character_for_action is_none={char is None}", flush=True)
+                self.log(f"[debug] after _resolve_character_for_action is_none={char is None}")
                 if char is None:
                     return
+                print("[debug] before _resolve_open_sprite", flush=True)
+                self.log("[debug] before _resolve_open_sprite")
                 open_sprite = self._resolve_open_sprite(mouth_dir, char)
+                print(f"[debug] after _resolve_open_sprite is_none={open_sprite is None}", flush=True)
+                self.log(f"[debug] after _resolve_open_sprite is_none={open_sprite is None}")
                 if open_sprite is None:
                     return
+                print("[debug] before _build_mouth_color_adjust", flush=True)
+                self.log("[debug] before _build_mouth_color_adjust")
                 color_cfg = self._build_mouth_color_adjust()
+                print("[debug] after _build_mouth_color_adjust", flush=True)
+                self.log("[debug] after _build_mouth_color_adjust")
 
                 self.log("[debug] on_track_and_calib plan build start")
+                print("[debug] before plan_track_and_calib", flush=True)
                 plan = plan_track_and_calib(
                     base_dir=base_dir,
                     video=paths.source_video,
@@ -1397,8 +1410,11 @@ class App(tk.Tk):
                     mouth_edge_width_ratio=color_cfg.edge_width_ratio,
                     mouth_inspect_boost=color_cfg.inspect_boost,
                 )
+                print("[debug] after plan_track_and_calib", flush=True)
                 self.log("[debug] on_track_and_calib execute start")
+                print("[debug] before _execute_plan", flush=True)
                 self._execute_plan(plan)
+                print("[debug] after _execute_plan", flush=True)
                 self.log("[debug] on_track_and_calib execute done")
             except Exception as e:
                 self.log(f"[debug] on_track_and_calib exception: {e}")
