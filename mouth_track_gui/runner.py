@@ -154,7 +154,10 @@ class CommandRunner:
             # process group that can still be targeted via ``os.killpg``.
             popen_kw["start_new_session"] = True
 
+        print("[debug] runner before on_log [cmd]", flush=True)
         self._on_log("[cmd] " + " ".join(cmd))
+        print("[debug] runner after on_log [cmd]", flush=True)
+        print(f"[debug] runner cwd={cwd or os.getcwd()}", flush=True)
         self._on_log(f"[debug] run_stream cwd={cwd or os.getcwd()}")
 
         try:
@@ -179,6 +182,7 @@ class CommandRunner:
         with self._lock:
             self._active_proc = p
 
+        print(f"[debug] runner child pid={p.pid}", flush=True)
         self._on_log(f"[debug] child pid={p.pid}")
 
         drain = DrainResult(was_stopped=False, stop_requested=False)
