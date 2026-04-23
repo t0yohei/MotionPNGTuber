@@ -1170,7 +1170,7 @@ class App(tk.Tk):
                 not os.path.isfile(p) for p in step.expected_outputs
             ):
                 if step.error_msg:
-                    self._show_error("失敗", f"{step.error_msg} (rc={last_rc})")
+                    self.ui_task_q.put(("show_error", ("失敗", f"{step.error_msg} (rc={last_rc})")))
                 return last_rc
 
             self._progress_step(i, f"{prog}完了 ({i}/{plan.total_steps})")
