@@ -1317,9 +1317,19 @@ class App(tk.Tk):
         self._set_stop_mode("none")
         self._set_running(True)
         def runner():
+            print("[debug] worker runner entered", flush=True)
+            self.log("[debug] worker runner entered")
             try:
                 target()
+                print("[debug] worker runner target returned", flush=True)
+                self.log("[debug] worker runner target returned")
+            except Exception as e:
+                print(f"[debug] worker runner exception: {e}", flush=True)
+                self.log(f"[debug] worker runner exception: {e}")
+                raise
             finally:
+                print("[debug] worker runner finalize", flush=True)
+                self.log("[debug] worker runner finalize")
                 # ワーカーが何で終わっても UI を戻す（メインスレッドで実行）
                 self.ui_task_q.put(("set_running", (False,)))
         self.worker_thread = threading.Thread(target=runner, daemon=True)
