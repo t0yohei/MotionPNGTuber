@@ -641,6 +641,10 @@ class App(tk.Tk):
                     self._show_error(*args)
                 elif kind == "show_warn":
                     self._show_warn(*args)
+                elif kind == "progress_begin":
+                    self._progress_begin(*args)
+                elif kind == "progress_step":
+                    self._progress_step(*args)
         except queue.Empty:
             pass
         self.after(100, self._poll_logs)
@@ -1087,9 +1091,13 @@ class App(tk.Tk):
         and post-actions.  Returns the return code of the last executed step.
         """
         if plan.session_init:
+            print("[debug] _execute_plan before _save_session", flush=True)
             self._save_session(plan.session_init)
+            print("[debug] _execute_plan after _save_session", flush=True)
 
-        self._progress_begin(plan.total_steps, f"{plan.name}準備中…")
+        print("[debug] _execute_plan before _progress_begin enqueue", flush=True)
+        self.ui_task_q.put(("progress_begin", (plan.total_steps, f"{plan.name}準備中…")))
+        print("[debug] _execute_plan after _progress_begin enqueue", flush=True)
 
         last_rc = 0
         skipped = False
@@ -1109,7 +1117,7 @@ class App(tk.Tk):
                 self.log(step.pre_log)
 
             prog = step.progress_label or step.label
-            self._progress_step(i, f"{prog}中… ({i}/{plan.total_steps})")
+            self.ui_task_q.put(("progress_step", (i, f"{prog}中… ({i}/{plan.total_steps})")))
 
             result = self.runner.run_stream(
                 step.cmd, cwd=step.cwd, allow_soft_stop=step.allow_soft_stop,
@@ -1127,7 +1135,7 @@ class App(tk.Tk):
                     if self.stop_mode == "force"
                     else "[info] 停止しました。"
                 )
-                self._progress_step(i, f"{prog}停止")
+                self.ui_task_q.put(("progress_step", (i, f"{prog}停止")))
                 break
 
             if last_rc != 0 or any(
