@@ -251,6 +251,7 @@ def run_detector(detector_py: str, args_map: Dict[str, Optional[str]]) -> int:
         if v is None:
             continue
         cmd += [k, str(v)]
+    print("[debug] run_detector cmd=" + " ".join(cmd), flush=True)
     return subprocess.call(cmd)
 
 
@@ -672,8 +673,10 @@ def _build_candidates_adaptive(
 
 
 def main() -> int:
+    print("[debug] auto_mouth_track_v2 main entered", flush=True)
     ap = build_arg_parser()
     args = ap.parse_args()
+    print(f"[debug] auto args video={args.video} out={args.out} detector={args.detector} device={args.device}", flush=True)
 
     candidate_reports: List[Dict[str, object]] = []
 
