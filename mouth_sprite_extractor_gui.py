@@ -1630,11 +1630,17 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
 
     def _show_player_frame(self, frame_idx: int):
         """指定フレームをプレイヤーに表示"""
+        print(f"[debug] _show_player_frame start idx={frame_idx}", flush=True)
+        self.log(f"[debug] _show_player_frame start idx={frame_idx}")
         if not self.video_path or self.player_total_frames <= 0:
+            print("[debug] _show_player_frame early return: no video or total frames", flush=True)
+            self.log("[debug] _show_player_frame early return: no video or total frames")
             return
 
         cap = self._open_player_capture()
         if cap is None or not cap.isOpened():
+            print("[debug] _show_player_frame early return: capture unavailable", flush=True)
+            self.log("[debug] _show_player_frame early return: capture unavailable")
             return
 
         frame_idx = max(0, min(int(frame_idx), self.player_total_frames - 1))
@@ -1644,16 +1650,22 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
             self.log(f"警告: フレーム読込失敗 F:{frame_idx}")
             return
 
+        print(f"[debug] _show_player_frame frame read ok idx={frame_idx}", flush=True)
+        self.log(f"[debug] _show_player_frame frame read ok idx={frame_idx}")
         self.player_current_frame_idx = frame_idx
         mf = self._mouth_frame_by_idx.get(frame_idx)
         display = draw_mouth_quad_overlay(frame, mf)
         if self.player_focus_var.get():
             display = crop_frame_around_mouth(display, mf, margin_scale=4.0)
+        print("[debug] _show_player_frame before photo conversion", flush=True)
+        self.log("[debug] _show_player_frame before photo conversion")
         photo = numpy_to_photoimage_fit(
             display,
             PLAYER_PREVIEW_MAX_W,
             PLAYER_PREVIEW_MAX_H,
         )
+        print("[debug] _show_player_frame after photo conversion", flush=True)
+        self.log("[debug] _show_player_frame after photo conversion")
         self.player_image = photo
         if photo:
             self.player_view.configure(image=photo, text="")
@@ -1985,17 +1997,25 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
             print("[debug] after analyze", flush=True)
             self.log("[debug] after analyze")
              
+            print("[debug] before valid_frames", flush=True)
+            self.log("[debug] before valid_frames")
             valid_frames = [mf for mf in self.extractor.mouth_frames if mf.valid]
+            print(f"[debug] after valid_frames: {len(valid_frames)}", flush=True)
+            self.log(f"[debug] after valid_frames: {len(valid_frames)}")
             self.valid_frames = valid_frames
             self._mouth_frame_by_idx = {
                 mf.frame_idx: mf for mf in self.extractor.mouth_frames
             }
+            print(f"[debug] mouth_frame_index size: {len(self._mouth_frame_by_idx)}", flush=True)
+            self.log(f"[debug] mouth_frame_index size: {len(self._mouth_frame_by_idx)}")
              
             if len(valid_frames) == 0:
                 self.log("エラー: 有効なフレームがありません")
                 self.after(0, lambda: self._finish_busy_state("有効なフレームが見つかりませんでした"))
                 return
              
+            print("[debug] before unified_size", flush=True)
+            self.log("[debug] before unified_size")
             # 統一サイズを計算（全有効フレームから）
             if valid_frames:
                 max_w = max(mf.width for mf in valid_frames)
@@ -2004,13 +2024,21 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
                     ensure_even_ge2(int(max_w * 1.1)),
                     ensure_even_ge2(int(max_h * 1.1)),
                 )
+            print(f"[debug] unified_size={self.unified_size}", flush=True)
+            self.log(f"[debug] unified_size={self.unified_size}")
             
             self.log("解析完了。プレイヤーで候補フレームを手動追加してください。")
             self.log("必要なら『候補を自動選出』で従来の自動抽出も使えます。")
+            print("[debug] before finish_busy_state schedule", flush=True)
+            self.log("[debug] before finish_busy_state schedule")
             self.after(0, lambda: self._finish_busy_state("解析完了"))
             self.after(0, lambda: self._enable_manual_pick_controls(True))
             self.after(0, lambda: self.auto_fill_btn.configure(state=tk.NORMAL))
+            print("[debug] before show_player_frame schedule", flush=True)
+            self.log("[debug] before show_player_frame schedule")
             self.after(0, lambda: self._show_player_frame(self.player_current_frame_idx))
+            print("[debug] after show_player_frame schedule", flush=True)
+            self.log("[debug] after show_player_frame schedule")
               
         except Exception as e:
             self.log(f"エラー: {e}")
