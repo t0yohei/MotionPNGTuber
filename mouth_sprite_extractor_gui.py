@@ -414,8 +414,9 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
         self._live_audio_apply_state: Optional[dict] = None
         self.live_preview_image: Optional["ImageTk.PhotoImage"] = None
         
-        # Log queue for thread-safe logging
+        # Queues for thread-safe UI handoff
         self.log_queue: queue.Queue[str] = queue.Queue()
+        self.ui_task_queue: "queue.Queue[tuple[str, dict]]" = queue.Queue()
         
         # Build UI
         self._build_ui()
@@ -823,18 +824,45 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
         self.busy_status_var.set(f"処理状態: {detail}")
     
     def _poll_logs(self):
-        """ログキューをポーリングしてUIを更新"""
-        while not self.log_queue.empty():
+        """ログキューとUIタスクをポーリングしてUIを更新"""
+        drained = 0
+        msgs: list[str] = []
+        while drained < 50:
             try:
-                msg = self.log_queue.get_nowait()
-                self.log_text.configure(state=tk.NORMAL)
-                self.log_text.insert(tk.END, msg + "\n")
-                self.log_text.see(tk.END)
-                self.log_text.configure(state=tk.DISABLED)
-                if self.busy_mode:
-                    self._update_busy_state(msg)
+                msgs.append(self.log_queue.get_nowait())
+                drained += 1
             except queue.Empty:
                 break
+
+        if msgs:
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.insert(tk.END, "\n".join(msgs) + "\n")
+            self.log_text.see(tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+            if self.busy_mode:
+                self._update_busy_state(msgs[-1])
+
+        while True:
+            try:
+                task_name, payload = self.ui_task_queue.get_nowait()
+            except queue.Empty:
+                break
+            if task_name == "analyze_done":
+                self.valid_frames = payload["valid_frames"]
+                self._mouth_frame_by_idx = payload["mouth_frame_by_idx"]
+                self.unified_size = payload["unified_size"]
+                self._finish_busy_state("解析完了")
+                self._enable_manual_pick_controls(True)
+                self.auto_fill_btn.configure(state=tk.NORMAL)
+                self._show_player_frame(self.player_current_frame_idx)
+            elif task_name == "analyze_empty":
+                self._finish_busy_state("有効なフレームが見つかりませんでした")
+            elif task_name == "analyze_error":
+                self._finish_busy_state("解析エラー")
+            elif task_name == "analyze_finalize":
+                self.is_analyzing = False
+                self.analyze_btn.configure(state=tk.NORMAL)
+                self._refresh_workflow_state()
         
         # Update crop labels
         for key in self.crop_vars:
@@ -1912,8 +1940,7 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
         
         self.log(f"動画を選択: {os.path.basename(path)}")
         if self.player_total_frames > 0:
-            self.log("動画選択後に自動で解析を開始します...")
-            self.after(50, self._on_analyze)
+            self.log("動画を選択しました。『解析開始』で解析を実行してください。")
     
     def _clear_candidates(self):
         """候補表示をクリア"""
@@ -1976,43 +2003,41 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
             
             self.extractor = MouthSpriteExtractor(self.video_path)
             self.extractor.analyze(callback=self.log)
-             
             valid_frames = [mf for mf in self.extractor.mouth_frames if mf.valid]
-            self.valid_frames = valid_frames
-            self._mouth_frame_by_idx = {
+            mouth_frame_by_idx = {
                 mf.frame_idx: mf for mf in self.extractor.mouth_frames
             }
              
             if len(valid_frames) == 0:
                 self.log("エラー: 有効なフレームがありません")
-                self.after(0, lambda: self._finish_busy_state("有効なフレームが見つかりませんでした"))
+                self.ui_task_queue.put(("analyze_empty", {}))
                 return
              
             # 統一サイズを計算（全有効フレームから）
+            unified_size = None
             if valid_frames:
                 max_w = max(mf.width for mf in valid_frames)
                 max_h = max(mf.height for mf in valid_frames)
-                self.unified_size = (
+                unified_size = (
                     ensure_even_ge2(int(max_w * 1.1)),
                     ensure_even_ge2(int(max_h * 1.1)),
                 )
             
             self.log("解析完了。プレイヤーで候補フレームを手動追加してください。")
             self.log("必要なら『候補を自動選出』で従来の自動抽出も使えます。")
-            self.after(0, lambda: self._finish_busy_state("解析完了"))
-            self.after(0, lambda: self._enable_manual_pick_controls(True))
-            self.after(0, lambda: self.auto_fill_btn.configure(state=tk.NORMAL))
-            self.after(0, lambda: self._show_player_frame(self.player_current_frame_idx))
+            self.ui_task_queue.put(("analyze_done", {
+                "valid_frames": valid_frames,
+                "mouth_frame_by_idx": mouth_frame_by_idx,
+                "unified_size": unified_size,
+            }))
               
         except Exception as e:
             self.log(f"エラー: {e}")
-            self.after(0, lambda: self._finish_busy_state("解析エラー"))
+            self.ui_task_queue.put(("analyze_error", {}))
             traceback.print_exc()
         
         finally:
-            self.is_analyzing = False
-            self.after(0, lambda: self.analyze_btn.configure(state=tk.NORMAL))
-            self.after(0, self._refresh_workflow_state)
+            self.ui_task_queue.put(("analyze_finalize", {}))
     
     def _get_video_capture(self) -> cv2.VideoCapture:
         """キャッシュされたVideoCaptureを取得"""
