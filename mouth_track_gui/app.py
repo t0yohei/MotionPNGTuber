@@ -123,6 +123,7 @@ class App(tk.Tk):
         self.geometry("1180x860")
 
         self.log_q: "queue.Queue[str]" = queue.Queue()
+        self.ui_task_q: "queue.Queue[tuple[str, tuple]]" = queue.Queue()
         self.worker_thread: threading.Thread | None = None
         self.stop_flag = threading.Event()
         self.active_proc: subprocess.Popen | None = None  # legacy; use runner
@@ -630,6 +631,18 @@ class App(tk.Tk):
                 self.txt.configure(state="disabled")
         except queue.Empty:
             pass
+
+        try:
+            while True:
+                kind, args = self.ui_task_q.get_nowait()
+                if kind == "set_running":
+                    self._set_running(*args)
+                elif kind == "show_error":
+                    self._show_error(*args)
+                elif kind == "show_warn":
+                    self._show_warn(*args)
+        except queue.Empty:
+            pass
         self.after(100, self._poll_logs)
 
     def _clear_log(self) -> None:
@@ -905,10 +918,10 @@ class App(tk.Tk):
         self.after(0, _apply)
 
     def _show_error(self, title: str, msg: str) -> None:
-        self.after(0, lambda: messagebox.showerror(title, msg))
+        messagebox.showerror(title, msg)
 
     def _show_warn(self, title: str, msg: str) -> None:
-        self.after(0, lambda: messagebox.showwarning(title, msg))
+        messagebox.showwarning(title, msg)
 
     def _apply_preview_selection(self, pad: float, coverage: float) -> None:
         pad_v = round(float(pad), 2)
@@ -1303,18 +1316,19 @@ class App(tk.Tk):
             try:
                 target()
             finally:
-                # ワーカーが何で終わっても UI を戻す
-                self._set_running(False)
+                # ワーカーが何で終わっても UI を戻す（メインスレッドで実行）
+                self.ui_task_q.put(("set_running", (False,)))
         self.worker_thread = threading.Thread(target=runner, daemon=True)
         self.worker_thread.start()
 
     def on_track_and_calib(self) -> None:
         def _worker():
             try:
+                self.log("[debug] on_track_and_calib worker start")
                 base_dir = HERE
                 ok, msg = ensure_backend_sanity(base_dir)
                 if not ok:
-                    self._show_error("エラー", msg)
+                    self.ui_task_q.put(("show_error", ("エラー", msg)))
                     return
                 paths = self._resolve_workflow_paths()
                 if paths is None:
@@ -1330,6 +1344,7 @@ class App(tk.Tk):
                     return
                 color_cfg = self._build_mouth_color_adjust()
 
+                self.log("[debug] on_track_and_calib plan build start")
                 plan = plan_track_and_calib(
                     base_dir=base_dir,
                     video=paths.source_video,
@@ -1353,9 +1368,12 @@ class App(tk.Tk):
                     mouth_edge_width_ratio=color_cfg.edge_width_ratio,
                     mouth_inspect_boost=color_cfg.inspect_boost,
                 )
+                self.log("[debug] on_track_and_calib execute start")
                 self._execute_plan(plan)
+                self.log("[debug] on_track_and_calib execute done")
             except Exception as e:
-                self._show_error("エラー", str(e))
+                self.log(f"[debug] on_track_and_calib exception: {e}")
+                self.ui_task_q.put(("show_error", ("エラー", str(e))))
         self._start_worker(_worker)
 
     def on_calib_only(self) -> None:
