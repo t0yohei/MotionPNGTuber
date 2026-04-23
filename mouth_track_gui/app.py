@@ -1102,6 +1102,7 @@ class App(tk.Tk):
         last_rc = 0
         skipped = False
         for i, step in enumerate(plan.steps, 1):
+            print(f"[debug] _execute_plan step {i} label={step.label}", flush=True)
             if step.skip_on_stop and self.runner.soft_requested:
                 prog = step.progress_label or step.label
                 self.log(f"[info] 停止予約のため、{prog}以降をスキップします。")
@@ -1119,9 +1120,11 @@ class App(tk.Tk):
             prog = step.progress_label or step.label
             self.ui_task_q.put(("progress_step", (i, f"{prog}中… ({i}/{plan.total_steps})")))
 
+            print(f"[debug] before run_stream step {i}", flush=True)
             result = self.runner.run_stream(
                 step.cmd, cwd=step.cwd, allow_soft_stop=step.allow_soft_stop,
             )
+            print(f"[debug] after run_stream step {i} rc={result.returncode}", flush=True)
             last_rc = result.returncode
 
             # ``was_stopped`` is reserved for cases where this step's child
@@ -1138,6 +1141,7 @@ class App(tk.Tk):
                 self.ui_task_q.put(("progress_step", (i, f"{prog}停止")))
                 break
 
+            print(f"[debug] before expected_outputs check step {i}", flush=True)
             if last_rc != 0 or any(
                 not os.path.isfile(p) for p in step.expected_outputs
             ):
