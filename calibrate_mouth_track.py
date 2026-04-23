@@ -129,7 +129,7 @@ class DragState:
     start_rot_deg: float | None = None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--video", required=True)
     ap.add_argument("--track", required=True, help="入力 mouth_track.npz")
@@ -145,7 +145,7 @@ def main() -> int:
     ap.add_argument("--mouth-edge-priority", type=float, default=0.85)
     ap.add_argument("--mouth-edge-width-ratio", type=float, default=0.10)
     ap.add_argument("--mouth-inspect-boost", type=float, default=1.0)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     color_cfg = clamp_mouth_color_adjust(
         MouthColorAdjust(
             brightness=float(args.mouth_brightness),

@@ -29,6 +29,7 @@ import queue
 import threading
 import subprocess
 import time
+import importlib
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from motionpngtuber.platform_open import (
@@ -645,6 +646,16 @@ class App(tk.Tk):
                     self._progress_begin(*args)
                 elif kind == "progress_step":
                     self._progress_step(*args)
+                elif kind == "run_calibrate_main_thread":
+                    done, result_holder, cmd = args
+                    try:
+                        self.log("[debug] run_calibrate_main_thread start")
+                        mod = importlib.import_module("calibrate_mouth_track")
+                        result_holder["rc"] = int(mod.main(cmd[2:]))
+                    except Exception as e:
+                        result_holder["exc"] = e
+                    finally:
+                        done.set()
         except queue.Empty:
             pass
         self.after(100, self._poll_logs)
@@ -1121,11 +1132,24 @@ class App(tk.Tk):
             self.ui_task_q.put(("progress_step", (i, f"{prog}中… ({i}/{plan.total_steps})")))
 
             print(f"[debug] before run_stream step {i}", flush=True)
-            result = self.runner.run_stream(
-                step.cmd, cwd=step.cwd, allow_soft_stop=step.allow_soft_stop,
-            )
+            if (
+                sys.platform == "darwin"
+                and any(os.path.basename(part) == "calibrate_mouth_track.py" for part in step.cmd)
+            ):
+                done = threading.Event()
+                result_holder: dict[str, object] = {}
+                self.ui_task_q.put(("run_calibrate_main_thread", (done, result_holder, step.cmd)))
+                done.wait()
+                if "exc" in result_holder:
+                    raise result_holder["exc"]  # type: ignore[misc]
+                last_rc = int(result_holder.get("rc", 1))
+                result = RunResult(returncode=last_rc, was_stopped=False, stop_requested=False)
+            else:
+                result = self.runner.run_stream(
+                    step.cmd, cwd=step.cwd, allow_soft_stop=step.allow_soft_stop,
+                )
+                last_rc = result.returncode
             print(f"[debug] after run_stream step {i} rc={result.returncode}", flush=True)
-            last_rc = result.returncode
 
             # ``was_stopped`` is reserved for cases where this step's child
             # process was actually interrupted.  A late stop request after the
