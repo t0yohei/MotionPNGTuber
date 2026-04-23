@@ -1628,6 +1628,34 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
         else:
             self._set_player_enabled(False)
 
+    def _debug_finish_busy_state_after_analyze(self):
+        print("[debug] ui callback: finish_busy_state start", flush=True)
+        self.log("[debug] ui callback: finish_busy_state start")
+        self._finish_busy_state("解析完了")
+        print("[debug] ui callback: finish_busy_state done", flush=True)
+        self.log("[debug] ui callback: finish_busy_state done")
+
+    def _debug_enable_manual_pick_controls_after_analyze(self):
+        print("[debug] ui callback: enable_manual_pick_controls start", flush=True)
+        self.log("[debug] ui callback: enable_manual_pick_controls start")
+        self._enable_manual_pick_controls(True)
+        print("[debug] ui callback: enable_manual_pick_controls done", flush=True)
+        self.log("[debug] ui callback: enable_manual_pick_controls done")
+
+    def _debug_enable_auto_fill_after_analyze(self):
+        print("[debug] ui callback: auto_fill enable start", flush=True)
+        self.log("[debug] ui callback: auto_fill enable start")
+        self.auto_fill_btn.configure(state=tk.NORMAL)
+        print("[debug] ui callback: auto_fill enable done", flush=True)
+        self.log("[debug] ui callback: auto_fill enable done")
+
+    def _debug_show_player_frame_after_analyze(self):
+        print("[debug] ui callback: show_player_frame start", flush=True)
+        self.log("[debug] ui callback: show_player_frame start")
+        self._show_player_frame(self.player_current_frame_idx)
+        print("[debug] ui callback: show_player_frame done", flush=True)
+        self.log("[debug] ui callback: show_player_frame done")
+
     def _show_player_frame(self, frame_idx: int):
         """指定フレームをプレイヤーに表示"""
         print(f"[debug] _show_player_frame start idx={frame_idx}", flush=True)
@@ -2031,12 +2059,12 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
             self.log("必要なら『候補を自動選出』で従来の自動抽出も使えます。")
             print("[debug] before finish_busy_state schedule", flush=True)
             self.log("[debug] before finish_busy_state schedule")
-            self.after(0, lambda: self._finish_busy_state("解析完了"))
-            self.after(0, lambda: self._enable_manual_pick_controls(True))
-            self.after(0, lambda: self.auto_fill_btn.configure(state=tk.NORMAL))
+            self.after(0, self._debug_finish_busy_state_after_analyze)
+            self.after(0, self._debug_enable_manual_pick_controls_after_analyze)
+            self.after(0, self._debug_enable_auto_fill_after_analyze)
             print("[debug] before show_player_frame schedule", flush=True)
             self.log("[debug] before show_player_frame schedule")
-            self.after(0, lambda: self._show_player_frame(self.player_current_frame_idx))
+            self.after(0, self._debug_show_player_frame_after_analyze)
             print("[debug] after show_player_frame schedule", flush=True)
             self.log("[debug] after show_player_frame schedule")
               
