@@ -1340,16 +1340,29 @@ class App(tk.Tk):
         self.log("[debug] on_track_and_calib clicked")
         def _worker():
             try:
+                print("[debug] on_track_and_calib worker start", flush=True)
                 self.log("[debug] on_track_and_calib worker start")
                 base_dir = HERE
+                print("[debug] before ensure_backend_sanity", flush=True)
+                self.log("[debug] before ensure_backend_sanity")
                 ok, msg = ensure_backend_sanity(base_dir)
+                print(f"[debug] after ensure_backend_sanity ok={ok}", flush=True)
+                self.log(f"[debug] after ensure_backend_sanity ok={ok}")
                 if not ok:
                     self.ui_task_q.put(("show_error", ("エラー", msg)))
                     return
+                print("[debug] before _resolve_workflow_paths", flush=True)
+                self.log("[debug] before _resolve_workflow_paths")
                 paths = self._resolve_workflow_paths()
+                print(f"[debug] after _resolve_workflow_paths is_none={paths is None}", flush=True)
+                self.log(f"[debug] after _resolve_workflow_paths is_none={paths is None}")
                 if paths is None:
                     return
+                print("[debug] before _resolve_mouth_root", flush=True)
+                self.log("[debug] before _resolve_mouth_root")
                 mouth_dir = self._resolve_mouth_root(auto_fill=True)
+                print(f"[debug] after _resolve_mouth_root is_none={mouth_dir is None}", flush=True)
+                self.log(f"[debug] after _resolve_mouth_root is_none={mouth_dir is None}")
                 if mouth_dir is None:
                     return
                 char = self._resolve_character_for_action()
