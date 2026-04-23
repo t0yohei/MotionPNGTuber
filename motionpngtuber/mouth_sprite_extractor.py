@@ -536,11 +536,23 @@ class MouthSpriteExtractor:
         ]
         
         if callback:
-            callback("Running face detector...")
+            callback(f"[phase] face detector start: {os.path.basename(self.video_path)}")
+            callback(f"[debug] face detector cmd: {' '.join(cmd)}")
         
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"Face detector failed: {result.stderr}")
+            raise RuntimeError(
+                "Face detector failed\n"
+                f"cmd={cmd}\n"
+                f"returncode={result.returncode}\n"
+                f"stdout={result.stdout}\n"
+                f"stderr={result.stderr}"
+            )
+        
+        if callback:
+            callback(f"[phase] face detector done: {os.path.basename(track_out)}")
+            if result.stdout.strip():
+                callback(f"[debug] face detector stdout: {result.stdout.strip()}")
         
         return track_out
     
@@ -552,24 +564,34 @@ class MouthSpriteExtractor:
             callback: 進捗コールバック関数（文字列を受け取る）
             position_threshold: 位置クラスタリングの閾値（ピクセル）
         """
+        if callback:
+            callback("[phase] analyze start")
+        
         # トラックファイルを取得
         track_path = self._find_track_path()
-        if not track_path:
+        if track_path:
             if callback:
-                callback("Track file not found. Running face detector...")
+                callback(f"[phase] reusing existing track: {os.path.basename(track_path)}")
+        else:
+            if callback:
+                callback("[phase] track missing, running face detector")
             track_path = self._run_face_detector(callback)
         
         if callback:
-            callback(f"Loading track: {os.path.basename(track_path)}")
+            callback(f"[phase] track load start: {os.path.basename(track_path)}")
         
         # トラックデータ読み込み
         quads, valid, confidence = load_track_data(
             track_path, self.vid_w, self.vid_h
         )
         
+        if callback:
+            callback(f"[phase] track load done: {len(quads)} frames")
+        
         # フレーム情報を構築
         self.mouth_frames = []
-        for i in range(len(quads)):
+        total_frames = len(quads)
+        for i in range(total_frames):
             quad = quads[i]
             center = quad_center(quad)
             w, h = quad_wh(quad)
@@ -584,11 +606,15 @@ class MouthSpriteExtractor:
                 valid=bool(valid[i]),
             )
             self.mouth_frames.append(mf)
+            if callback and ((i + 1) % 100 == 0 or i + 1 == total_frames):
+                callback(f"[progress] frame info build {i + 1}/{total_frames}")
         
         if callback:
-            callback(f"Analyzed {len(self.mouth_frames)} frames")
+            callback(f"[phase] frame info build done: {len(self.mouth_frames)} frames")
         
         # 位置クラスタリング
+        if callback:
+            callback("[phase] stable cluster start")
         centers = np.array([mf.center for mf in self.mouth_frames])
         valid_array = np.array([mf.valid for mf in self.mouth_frames])
         
@@ -598,20 +624,26 @@ class MouthSpriteExtractor:
         
         cluster_count = int(self.cluster_mask.sum())
         if callback:
-            callback(f"Found stable cluster with {cluster_count} frames")
+            callback(f"[phase] stable cluster done: {cluster_count} frames")
         
         # 5種類の口を選別
+        if callback:
+            callback("[phase] mouth selection start")
         self.selection = select_5_mouth_types(self.mouth_frames, self.cluster_mask)
+        if callback:
+            callback(f"[phase] mouth selection done: {self.selection.as_dict()}")
         
         # 統一サイズを計算
+        if callback:
+            callback("[phase] unified size start")
         selected_indices = list(self.selection.as_dict().values())
         self.unified_size = compute_unified_size(
             self.mouth_frames, selected_indices
         )
         
         if callback:
-            callback(f"Selected frames: {self.selection.as_dict()}")
-            callback(f"Unified size: {self.unified_size[0]}x{self.unified_size[1]}")
+            callback(f"[phase] unified size done: {self.unified_size[0]}x{self.unified_size[1]}")
+            callback("[phase] analyze done")
     
     def get_preview_sprites(self, feather_px: int = 15) -> Dict[str, np.ndarray]:
         """
@@ -634,7 +666,9 @@ class MouthSpriteExtractor:
         idx_to_mf = {mf.frame_idx: mf for mf in self.mouth_frames}
         
         sprites = {}
-        for name, frame_idx in self.selection.as_dict().items():
+        selection_dict = self.selection.as_dict()
+        total_sprites = len(selection_dict)
+        for idx, (name, frame_idx) in enumerate(selection_dict.items(), start=1):
             cap.set(cv2.CAP_PROP_POS_FRAMES, float(frame_idx))
             ok, frame = cap.read()
             if not ok or frame is None:
@@ -672,12 +706,20 @@ class MouthSpriteExtractor:
         # 出力ディレクトリを作成
         os.makedirs(output_dir, exist_ok=True)
         
+        if callback:
+            callback("[phase] preview sprite extraction start")
+        
         # スプライトを取得
         sprites = self.get_preview_sprites(feather_px)
         
+        if callback:
+            callback(f"[phase] preview sprite extraction done: {len(sprites)} sprites")
+            callback("[phase] sprite save start")
+        
         # ファイルに保存
         saved_paths = {}
-        for name, rgba in sprites.items():
+        total_sprites = len(sprites)
+        for idx, (name, rgba) in enumerate(sprites.items(), start=1):
             filename = f"{name}.png"
             filepath = os.path.join(output_dir, filename)
             
@@ -691,8 +733,10 @@ class MouthSpriteExtractor:
             saved_paths[name] = filepath
             
             if callback:
-                callback(f"Saved: {filename}")
+                callback(f"[progress] sprite save {idx}/{total_sprites}: {filename}")
         
+        if callback:
+            callback("[phase] sprite save done")
         return saved_paths
 
 
