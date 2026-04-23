@@ -1306,7 +1306,11 @@ class App(tk.Tk):
 
     # ----- workflow buttons -----
     def _start_worker(self, target) -> None:
+        print("[debug] _start_worker called", flush=True)
+        self.log("[debug] _start_worker called")
         if self.worker_thread and self.worker_thread.is_alive():
+            print("[debug] worker already alive", flush=True)
+            self.log("[debug] worker already alive")
             return
         self.stop_flag.clear()
         self.runner.reset()
@@ -1322,6 +1326,8 @@ class App(tk.Tk):
         self.worker_thread.start()
 
     def on_track_and_calib(self) -> None:
+        print("[debug] on_track_and_calib clicked", flush=True)
+        self.log("[debug] on_track_and_calib clicked")
         def _worker():
             try:
                 self.log("[debug] on_track_and_calib worker start")
