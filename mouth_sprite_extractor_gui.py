@@ -1972,10 +1972,18 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
     def _analyze_worker(self):
         """解析ワーカースレッド"""
         try:
+            print("[debug] _analyze_worker entered", flush=True)
+            self.log("[debug] _analyze_worker entered")
+            print("[debug] before extractor init", flush=True)
+            self.log("[debug] before extractor init")
             self.log("解析を開始...")
             
             self.extractor = MouthSpriteExtractor(self.video_path)
+            print("[debug] after extractor init", flush=True)
+            self.log("[debug] after extractor init")
             self.extractor.analyze(callback=self.log)
+            print("[debug] after analyze", flush=True)
+            self.log("[debug] after analyze")
              
             valid_frames = [mf for mf in self.extractor.mouth_frames if mf.valid]
             self.valid_frames = valid_frames
