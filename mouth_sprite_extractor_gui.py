@@ -824,17 +824,22 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
     
     def _poll_logs(self):
         """ログキューをポーリングしてUIを更新"""
-        while not self.log_queue.empty():
+        drained = 0
+        msgs: list[str] = []
+        while drained < 50:
             try:
-                msg = self.log_queue.get_nowait()
-                self.log_text.configure(state=tk.NORMAL)
-                self.log_text.insert(tk.END, msg + "\n")
-                self.log_text.see(tk.END)
-                self.log_text.configure(state=tk.DISABLED)
-                if self.busy_mode:
-                    self._update_busy_state(msg)
+                msgs.append(self.log_queue.get_nowait())
+                drained += 1
             except queue.Empty:
                 break
+
+        if msgs:
+            self.log_text.configure(state=tk.NORMAL)
+            self.log_text.insert(tk.END, "\n".join(msgs) + "\n")
+            self.log_text.see(tk.END)
+            self.log_text.configure(state=tk.DISABLED)
+            if self.busy_mode:
+                self._update_busy_state(msgs[-1])
         
         # Update crop labels
         for key in self.crop_vars:
