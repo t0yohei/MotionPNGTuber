@@ -215,14 +215,21 @@ def build_ui(
     pad_value_label.pack(side="left")
     vars.pad.trace_add("write", _save_pad)
 
+    row_adv_pad_presets = ttk.Frame(advanced_body)
+    row_adv_pad_presets.pack(fill="x", pady=(0, 6))
+    ttk.Label(row_adv_pad_presets, text="おすすめ").pack(side="left")
+    ttk.Button(row_adv_pad_presets, text="揺れ向け 1.8", command=lambda: vars.pad.set(1.8)).pack(side="left", padx=(8, 4))
+    ttk.Button(row_adv_pad_presets, text="標準 2.1", command=lambda: vars.pad.set(2.1)).pack(side="left", padx=4)
+    ttk.Button(row_adv_pad_presets, text="広め 2.4", command=lambda: vars.pad.set(2.4)).pack(side="left", padx=4)
+
     ttk.Label(
         advanced_body,
         text=(
             "普段は 2.1 のままでOKです。\n"
+            "・顔揺れが強い / 頬や顎を巻き込みやすい → 少し下げる（例: 1.8〜2.0）\n"
             "・口PNGが小さく見える / 口の端が切れる → 少し上げる（例: 2.3〜2.6）\n"
-            "・口が大きすぎる / 顎や頬まで拾う → 少し下げる（例: 1.8〜2.0）\n"
             "※ この設定は主に『① 解析→キャリブ』の口配置サイズに効きます。\n"
-            "※ 『見た目確認（軽量）』で 1.9 / 2.1 / 2.3 前後を見比べてから決めるのがおすすめです。"
+            "※ 『見た目確認（軽量）』で 1.8 / 2.1 / 2.4 前後を見比べてから決めるのがおすすめです。"
         ),
         justify="left",
         font=("", 9),
@@ -299,6 +306,11 @@ def build_ui(
         "<<ComboboxSelected>>",
         lambda _evt=None: callbacks.save_session({"smoothing": vars.smoothing_menu.get()}),
     )
+    ttk.Label(
+        frm,
+        text="顔揺れが強い素材は『安定重視（1.0）』→ まだ厳しければ『超安定（0.8）』がおすすめ",
+        font=("", 9),
+    ).pack(anchor="w", pady=(0, 8))
 
     # --- Audio device ---
     row4 = ttk.Frame(frm)

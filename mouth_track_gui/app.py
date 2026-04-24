@@ -93,6 +93,8 @@ from motionpngtuber.mouth_color_adjust import (
 # --- smoothing presets (GUI) ---
 SMOOTHING_PRESETS: dict[str, float | None] = {
     "Auto（今のまま）": None,  # pass nothing -> keep current default behavior
+    "超安定（0.8）": 0.8,
+    "安定重視（1.0）": 1.0,
     "ゆっくり（1.5）": 1.5,
     "普通（3.0）": 3.0,
     "高速（6.0）": 6.0,
