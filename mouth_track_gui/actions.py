@@ -147,7 +147,7 @@ def build_stabilize_cmd(
         "-i", video,
         "-map", "0:v:0",
         "-an",
-        "-vf", "deshake=x=0:y=0:w=iw:h=ih:rx=16:ry=16:edge=mirror",
+        "-vf", "deshake=rx=16:ry=16:edge=mirror",
         "-c:v", "mpeg4",
         "-q:v", "2",
         "-pix_fmt", "yuv420p",
