@@ -85,7 +85,7 @@ def build_track_cmd(
         "--det-scale", "1.0",
         "--min-conf", "0.5",
         "--early-stop",
-        "--max-tries", "4",
+        "--max-tries", "6",
     ]
     if smoothing_cutoff is not None:
         cmd += ["--smooth-cutoff", str(smoothing_cutoff)]
