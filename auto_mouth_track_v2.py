@@ -251,6 +251,7 @@ def run_detector(detector_py: str, args_map: Dict[str, Optional[str]]) -> int:
         if v is None:
             continue
         cmd += [k, str(v)]
+    print("[debug] run_detector cmd=" + " ".join(cmd), flush=True)
     return subprocess.call(cmd)
 
 
@@ -658,6 +659,8 @@ def _build_candidates_adaptive(
         # Stronger smoothing (lower cutoff) + optionally stricter confidence
         add("smooth-2.0", {"--smooth-cutoff": "2.0", "--valid-min-ratio": "0.0", "--valid-min-count": "0"})
         add("smooth-1.5", {"--smooth-cutoff": "1.5", "--valid-min-ratio": "0.0", "--valid-min-count": "0"})
+        add("smooth-1.0", {"--smooth-cutoff": "1.0", "--valid-min-ratio": "0.0", "--valid-min-count": "0"})
+        add("smooth-0.8", {"--smooth-cutoff": "0.8", "--valid-min-ratio": "0.0", "--valid-min-count": "0"})
         # Sometimes jitter is false positives; try stricter min-conf
         try:
             mc_up = min(0.75, float(args.min_conf) + 0.10)
@@ -672,8 +675,10 @@ def _build_candidates_adaptive(
 
 
 def main() -> int:
+    print("[debug] auto_mouth_track_v2 main entered", flush=True)
     ap = build_arg_parser()
     args = ap.parse_args()
+    print(f"[debug] auto args video={args.video} out={args.out} detector={args.detector} device={args.device}", flush=True)
 
     candidate_reports: List[Dict[str, object]] = []
 
