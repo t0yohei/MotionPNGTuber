@@ -127,7 +127,7 @@ def build_calib_cmd(
 
 def build_erase_coverage_arg(coverage: float) -> str:
     """Compute the multi-coverage argument string for auto_erase_mouth.py."""
-    covs = [max(0.40, min(0.90, coverage + x)) for x in (0.0, 0.10, 0.20)]
+    covs = [max(0.20, min(0.90, coverage + x)) for x in (0.0, 0.10, 0.20)]
     covs = sorted(set(round(x, 2) for x in covs))
     return ",".join(f"{x:.2f}" for x in covs)
 

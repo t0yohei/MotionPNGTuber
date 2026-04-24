@@ -446,7 +446,7 @@ def export_erase_range_preview_image(
     This is used as a macOS-safe fallback where OpenCV window previews are
     unstable. Returns the written image path on success.
     """
-    cov = float(np.clip(coverage, 0.40, 0.90))
+    cov = float(np.clip(coverage, 0.20, 0.90))
     pad_values = build_pad_preview_values(preview_pad)
     preview_pad_safe = max(1e-6, float(preview_pad))
 
@@ -597,7 +597,7 @@ def export_erase_range_preview_video(
     show_error: Callable[[str, str], None],
 ) -> str | None:
     """Export a short non-interactive preview video for macOS-safe review."""
-    cov = float(np.clip(coverage, 0.40, 0.90))
+    cov = float(np.clip(coverage, 0.20, 0.90))
     pad_values = build_pad_preview_values(preview_pad)
     preview_pad_safe = max(1e-6, float(preview_pad))
 
@@ -782,7 +782,7 @@ def run_erase_range_preview(
     overlay for the current coverage value. Users can apply the chosen pad /
     coverage back to the GUI without regenerating the mouthless video.
     """
-    cov = float(np.clip(coverage, 0.40, 0.90))
+    cov = float(np.clip(coverage, 0.20, 0.90))
     pad_values = build_pad_preview_values(preview_pad)
     preview_pad_safe = max(1e-6, float(preview_pad))
     selected_idx = int(np.argmin([abs(p - float(preview_pad)) for p in pad_values]))
@@ -1111,7 +1111,7 @@ def run_erase_range_preview(
                 paused = True
                 continue
             if k8 == ord("f"):
-                cov = max(0.40, round(cov - 0.02, 2))
+                cov = max(0.20, round(cov - 0.02, 2))
                 inner_f, ring_f = build_preview_masks(norm_w, norm_h, cov)
                 paused = True
                 continue

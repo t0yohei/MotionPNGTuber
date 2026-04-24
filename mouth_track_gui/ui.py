@@ -262,7 +262,7 @@ def build_ui(
     row3 = ttk.Frame(frm)
     row3.pack(fill="x", pady=(0, 8))
     ttk.Label(row3, text="口消し範囲").pack(side="left")
-    ttk.Scale(row3, from_=0.40, to=0.90, variable=vars.coverage, orient="horizontal").pack(
+    ttk.Scale(row3, from_=0.20, to=0.90, variable=vars.coverage, orient="horizontal").pack(
         side="left", fill="x", expand=True, padx=8,
     )
     cov_label = ttk.Label(row3, text=f"{vars.coverage.get():.2f}")
