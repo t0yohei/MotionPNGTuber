@@ -427,6 +427,161 @@ def _read_preview_frame(
     cached = frame.copy()
     return True, frame, req, cached, req + 1
 
+def export_erase_range_preview_image(
+    *,
+    video: str,
+    track_path: str,
+    track_npz: str,
+    calib_npz: str,
+    coverage: float,
+    preview_pad: float,
+    open_sprite: str | None,
+    color_adjust: MouthColorAdjust | None,
+    out_path: str,
+    log_fn: Callable[[str], None],
+    show_error: Callable[[str, str], None],
+) -> str | None:
+    """Export a non-interactive lightweight preview image.
+
+    This is used as a macOS-safe fallback where OpenCV window previews are
+    unstable. Returns the written image path on success.
+    """
+    cov = float(np.clip(coverage, 0.40, 0.90))
+    pad_values = build_pad_preview_values(preview_pad)
+    preview_pad_safe = max(1e-6, float(preview_pad))
+
+    cap = cv2.VideoCapture(video)
+    if not cap.isOpened():
+        show_error("エラー", f"動画を開けません: {video}")
+        return None
+
+    try:
+        vid_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        vid_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        if vid_w <= 0 or vid_h <= 0:
+            show_error("エラー", "動画サイズが取得できませんでした。")
+            return None
+
+        track_label = (
+            "mouth_track_calibrated.npz"
+            if os.path.abspath(track_path) == os.path.abspath(calib_npz)
+            else "mouth_track.npz"
+        )
+        log_fn(f"[info] 軽量見た目確認画像に使用する track: {track_path}")
+
+        sprite_bgra: np.ndarray | None = None
+        if open_sprite and os.path.isfile(open_sprite):
+            try:
+                sprite_bgra = read_image_bgra(open_sprite)
+                if sprite_bgra is not None and color_adjust is not None:
+                    sprite_bgra = apply_mouth_color_adjust_4ch(
+                        sprite_bgra,
+                        color_adjust,
+                        color_order="BGRA",
+                    )
+            except Exception as e:
+                sprite_bgra = None
+                log_fn(f"[warn] open.png の読み込みに失敗したため、口PNG重ね表示なしで続行します: {e}")
+
+        try:
+            track_data = load_and_scale_quads(track_path, vid_w, vid_h)
+        except ValueError as e:
+            show_error("エラー", str(e))
+            return None
+
+        filled = fill_invalid_quads(track_data.quads, track_data.valid)
+        if filled is None:
+            show_error("エラー", "track が全フレーム invalid のようです。")
+            return None
+
+        N = track_data.n_frames
+        n_out = min(total_frames if total_frames > 0 else N, N)
+        norm_w, norm_h = compute_norm_patch_size(filled, n_out)
+        inner_f, ring_f = build_preview_masks(norm_w, norm_h, cov)
+
+        valid_idxs = np.where(track_data.valid[:n_out])[0]
+        idx = int(valid_idxs[len(valid_idxs) // 2]) if len(valid_idxs) else min(max(n_out // 2, 0), max(n_out - 1, 0))
+        ok, frame, _, _, _ = _read_preview_frame(cap, idx, cached_idx=None, cached_frame=None, next_read_idx=None)
+        if not ok or frame is None:
+            show_error("エラー", f"プレビュー用フレームを読めませんでした: {idx}")
+            return None
+
+        src_pts = np.array(
+            [[0, 0], [norm_w - 1, 0], [norm_w - 1, norm_h - 1], [0, norm_h - 1]],
+            dtype=np.float32,
+        )
+        red = np.zeros((vid_h, vid_w, 3), dtype=np.uint8)
+        red[:, :, 2] = 255
+        yellow = np.zeros((vid_h, vid_w, 3), dtype=np.uint8)
+        yellow[:, :, 1] = 255
+        yellow[:, :, 2] = 255
+        selected_color = (0, 255, 0)
+        other_color = (255, 200, 0)
+        invalid_color = (0, 0, 255)
+        inspect_boost = 1.0
+        inspect_levels = (1.0, 2.0, 3.0, 4.0)
+        if color_adjust is not None:
+            inspect_boost = min(inspect_levels, key=lambda x: abs(x - float(color_adjust.inspect_boost)))
+
+        q = filled[idx].astype(np.float32).reshape(4, 2)
+        panels: list[np.ndarray] = []
+        selected_idx = int(np.argmin([abs(p - float(preview_pad)) for p in pad_values]))
+        for pad_idx, pad_value in enumerate(pad_values):
+            q_pad = scale_quad_about_center(q, float(pad_value) / preview_pad_safe)
+            M = cv2.getPerspectiveTransform(src_pts, q_pad)
+            m_inner = cv2.warpPerspective(inner_f, M, (vid_w, vid_h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+            m_ring = cv2.warpPerspective(ring_f, M, (vid_w, vid_h), flags=cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+
+            out = frame.copy()
+            if sprite_bgra is not None:
+                warped_sprite = warp_sprite_to_quad(sprite_bgra, q_pad, vid_w, vid_h)
+                out = alpha_blend_sprite_over_bgr(out, warped_sprite, opacity=0.78)
+
+            a_inner = 0.40
+            a_ring = 0.22
+            out = (out.astype(np.float32) * (1.0 - a_inner * m_inner[..., None]) + red.astype(np.float32) * (a_inner * m_inner[..., None])).astype(np.uint8)
+            out = (out.astype(np.float32) * (1.0 - a_ring * m_ring[..., None]) + yellow.astype(np.float32) * (a_ring * m_ring[..., None])).astype(np.uint8)
+            out = apply_inspect_boost_3ch(out, inspect_boost, color_order="BGR")
+
+            panel_color = selected_color if pad_idx == selected_idx else other_color
+            thickness = 3 if pad_idx == selected_idx else 2
+            pts = q_pad.reshape(-1, 1, 2).astype(np.int32)
+            cv2.polylines(out, [pts], True, panel_color, thickness, cv2.LINE_AA)
+            panel_info = f"{pad_idx + 1}: pad={pad_value:.2f}"
+            if pad_idx == selected_idx:
+                panel_info += " [current]"
+            cv2.putText(out, panel_info, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(out, panel_info, (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, panel_color, 1, cv2.LINE_AA)
+            if not bool(track_data.valid[idx]):
+                cv2.putText(out, "INVALID (filled)", (10, 56), cv2.FONT_HERSHEY_SIMPLEX, 0.65, invalid_color, 2, cv2.LINE_AA)
+            panels.append(out)
+
+        strip = np.concatenate(panels, axis=1)
+        canvas = cv2.copyMakeBorder(strip, 120, 0, 0, 0, cv2.BORDER_CONSTANT, value=(18, 18, 18))
+        info1 = f"frame {idx+1}/{n_out}  cov={cov:.2f}  track={track_label}  red=erase  yellow=ring  inspect={inspect_boost:.1f}"
+        info2 = "macOS fallback preview image (non-interactive). Use ② 口消し動画生成 for final verification."
+        info_rows = [(24, info1), (52, info2)]
+        if color_adjust is not None:
+            info_rows.append((80, f"mouth adj  bri={color_adjust.brightness:.0f} sat={color_adjust.saturation:.2f} warm={color_adjust.warmth:.0f} edge={color_adjust.edge_priority:.2f}"))
+        for y, text in info_rows:
+            cv2.putText(canvas, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(canvas, text, (10, y), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 1, cv2.LINE_AA)
+
+        display = resize_for_preview(canvas)
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        if not cv2.imwrite(out_path, display):
+            show_error("エラー", f"プレビュー画像を書き出せませんでした: {out_path}")
+            return None
+        log_fn(f"[info] 軽量見た目確認画像を書き出しました: {out_path}")
+        return out_path
+    finally:
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+
 def run_erase_range_preview(
     *,
     video: str,
