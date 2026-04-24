@@ -1552,6 +1552,14 @@ class App(tk.Tk):
 
     def on_preview_erase_range(self) -> None:
         """フル書き出し前に、pad / 口消し範囲を軽量確認するプレビュー。"""
+        if sys.platform == "darwin":
+            self._show_warn(
+                "未対応",
+                "macOS では『見た目の確認(軽量)』の OpenCV プレビューが不安定なため、いったん無効化しています。\n"
+                "代わりに『② 口消し動画生成』で見た目を確認してください。",
+            )
+            return
+
         def _worker():
             try:
                 try:
