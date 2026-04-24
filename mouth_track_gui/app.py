@@ -1528,14 +1528,6 @@ class App(tk.Tk):
 
     def on_preview_erase_range(self) -> None:
         """フル書き出し前に、pad / 口消し範囲を軽量確認するプレビュー。"""
-        if sys.platform == "darwin":
-            self._show_warn(
-                "未対応",
-                "macOS では『見た目の確認(軽量)』の OpenCV プレビューが不安定なため、いったん無効化しています。\n"
-                "代わりに『② 口消し動画生成』で見た目を確認してください。",
-            )
-            return
-
         def _worker():
             try:
                 try:
@@ -1576,7 +1568,28 @@ class App(tk.Tk):
                 except Exception as e:
                     self.log(f"[warn] 見た目確認用 open.png の解決に失敗しました: {e}")
 
-                from .preview import run_erase_range_preview
+                from .preview import export_erase_range_preview_image, run_erase_range_preview
+
+                if sys.platform == "darwin":
+                    stem = os.path.splitext(os.path.basename(paths.source_video))[0]
+                    out_path = os.path.join(paths.out_dir, f"{stem}_look_preview.png")
+                    saved = export_erase_range_preview_image(
+                        video=paths.source_video,
+                        track_path=track_path,
+                        track_npz=paths.track_npz,
+                        calib_npz=paths.calib_npz,
+                        coverage=float(self.coverage_var.get()),
+                        preview_pad=float(self.pad_var.get()),
+                        open_sprite=open_sprite,
+                        color_adjust=self._build_mouth_color_adjust(),
+                        out_path=out_path,
+                        log_fn=self.log,
+                        show_error=self._show_error,
+                    )
+                    if saved:
+                        self.log("[info] macOS では静止画プレビューを出力しました。")
+                        open_path_with_default_app(saved)
+                    return
 
                 selection = run_erase_range_preview(
                     video=paths.source_video,
