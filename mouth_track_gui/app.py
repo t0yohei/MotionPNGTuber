@@ -159,7 +159,7 @@ class App(tk.Tk):
         self.emotion_preset_var = tk.StringVar(value=_ep)
 
         self.emotion_hud_var = tk.BooleanVar(value=safe_bool(sess.get("emotion_hud", False), default=False))
-        self.coverage_var = tk.DoubleVar(value=safe_float(sess.get("coverage", 0.60), 0.60, min_v=0.40, max_v=0.90))
+        self.coverage_var = tk.DoubleVar(value=safe_float(sess.get("coverage", 0.60), 0.60, min_v=0.20, max_v=0.90))
         self.mouth_brightness_var = tk.DoubleVar(
             value=safe_float(sess.get("mouth_brightness", 0.0), 0.0, min_v=-32.0, max_v=32.0),
         )
