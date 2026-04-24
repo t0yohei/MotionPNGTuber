@@ -1592,12 +1592,17 @@ class App(tk.Tk):
                 except Exception as e:
                     self.log(f"[warn] 見た目確認用 open.png の解決に失敗しました: {e}")
 
-                from .preview import export_erase_range_preview_image, run_erase_range_preview
+                from .preview import (
+                    export_erase_range_preview_image,
+                    export_erase_range_preview_video,
+                    run_erase_range_preview,
+                )
 
                 if sys.platform == "darwin":
                     stem = os.path.splitext(os.path.basename(paths.source_video))[0]
-                    out_path = os.path.join(paths.out_dir, f"{stem}_look_preview.png")
-                    saved = export_erase_range_preview_image(
+                    video_out = os.path.join(paths.out_dir, f"{stem}_look_preview.mp4")
+                    image_out = os.path.join(paths.out_dir, f"{stem}_look_preview.png")
+                    saved = export_erase_range_preview_video(
                         video=paths.source_video,
                         track_path=track_path,
                         track_npz=paths.track_npz,
@@ -1606,12 +1611,26 @@ class App(tk.Tk):
                         preview_pad=float(self.pad_var.get()),
                         open_sprite=open_sprite,
                         color_adjust=self._build_mouth_color_adjust(),
-                        out_path=out_path,
+                        out_path=video_out,
                         log_fn=self.log,
                         show_error=self._show_error,
                     )
+                    if not saved:
+                        saved = export_erase_range_preview_image(
+                            video=paths.source_video,
+                            track_path=track_path,
+                            track_npz=paths.track_npz,
+                            calib_npz=paths.calib_npz,
+                            coverage=float(self.coverage_var.get()),
+                            preview_pad=float(self.pad_var.get()),
+                            open_sprite=open_sprite,
+                            color_adjust=self._build_mouth_color_adjust(),
+                            out_path=image_out,
+                            log_fn=self.log,
+                            show_error=self._show_error,
+                        )
                     if saved:
-                        self.log("[info] macOS では静止画プレビューを出力しました。")
+                        self.log("[info] macOS では短尺プレビューを書き出しました。")
                         open_path_with_default_app(saved)
                     return
 
