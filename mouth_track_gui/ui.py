@@ -111,8 +111,32 @@ def build_ui(
     via the callbacks parameter.
     """
     pad = 10
-    frm = ttk.Frame(parent)
-    frm.pack(fill="both", expand=True, padx=pad, pady=pad)
+    outer = ttk.Frame(parent)
+    outer.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(outer, highlightthickness=0)
+    v_scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=v_scroll.set)
+
+    v_scroll.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    frm = ttk.Frame(canvas, padding=pad)
+    window_id = canvas.create_window((0, 0), window=frm, anchor="nw")
+
+    def _sync_scrollregion(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _sync_width(event) -> None:
+        canvas.itemconfigure(window_id, width=event.width)
+
+    def _on_mousewheel(event) -> None:
+        if event.delta:
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    frm.bind("<Configure>", _sync_scrollregion)
+    canvas.bind("<Configure>", _sync_width)
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
     # --- Quick guide / recommended flow ---
     guide = ttk.LabelFrame(frm, text="おすすめの流れ", padding=8)
