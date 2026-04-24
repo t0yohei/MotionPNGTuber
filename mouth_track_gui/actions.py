@@ -130,7 +130,12 @@ def build_stabilize_cmd(
     video: str,
     stabilized_video: str,
 ) -> list[str]:
-    """Build an ffmpeg deshake command for pre-track stabilization."""
+    """Build an ffmpeg deshake command for pre-track stabilization.
+
+    The stabilized intermediate is only used for tracking/calibration, so keep
+    it video-only and prefer broadly available codecs over platform-specific
+    encoder setups.
+    """
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         raise RuntimeError(
@@ -141,14 +146,11 @@ def build_stabilize_cmd(
         "-y",
         "-i", video,
         "-map", "0:v:0",
-        "-map", "0:a?",
+        "-an",
         "-vf", "deshake=x=0:y=0:w=iw:h=ih:rx=16:ry=16:edge=mirror",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "18",
+        "-c:v", "mpeg4",
+        "-q:v", "2",
         "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
         stabilized_video,
     ]
 
