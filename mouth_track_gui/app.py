@@ -161,6 +161,7 @@ class App(tk.Tk):
         self.emotion_preset_var = tk.StringVar(value=_ep)
 
         self.emotion_hud_var = tk.BooleanVar(value=safe_bool(sess.get("emotion_hud", False), default=False))
+        self.stabilize_tracking_var = tk.BooleanVar(value=safe_bool(sess.get("stabilize_tracking", False), default=False))
         self.coverage_var = tk.DoubleVar(value=safe_float(sess.get("coverage", 0.60), 0.60, min_v=0.20, max_v=0.90))
         self.mouth_brightness_var = tk.DoubleVar(
             value=safe_float(sess.get("mouth_brightness", 0.0), 0.0, min_v=-32.0, max_v=32.0),
@@ -247,6 +248,7 @@ class App(tk.Tk):
             audio_device_menu=self.audio_device_menu_var,
             emotion_preset=self.emotion_preset_var,
             emotion_hud=self.emotion_hud_var,
+            stabilize_tracking=self.stabilize_tracking_var,
             progress=self.progress_var,
             progress_text=self.progress_text_var,
         )
@@ -952,7 +954,7 @@ class App(tk.Tk):
         source_video: str | None = None,
     ) -> WorkflowPaths | None:
         paths, err = build_workflow_paths(
-            source_video if source_video is not None else self.video_var.get().strip(),
+            source_video if source_video is not None else self._workflow_source_video(),
             require_track=require_track,
             require_calibrated=require_calibrated,
             prefer_calibrated=prefer_calibrated,
@@ -961,6 +963,16 @@ class App(tk.Tk):
             self._show_error("エラー", err)
             return None
         return paths
+
+    def _workflow_source_video(self) -> str:
+        base_video = self.video_var.get().strip()
+        if not bool(self.stabilize_tracking_var.get()):
+            return base_video
+        sess = load_session()
+        stabilized = str(sess.get("stabilized_video", "") or "").strip()
+        if stabilized and os.path.isfile(stabilized):
+            return stabilized
+        return base_video
 
     def _resolve_mouth_root_value(self, mouth_root: str) -> str | None:
         path, err = validate_existing_dir(
@@ -1027,6 +1039,8 @@ class App(tk.Tk):
         self._save_session({
             "video": self.video_var.get(),
             "source_video": self.video_var.get(),
+            "stabilize_tracking": bool(self.stabilize_tracking_var.get()),
+            "stabilized_video": "",
             "mouth_dir": self.mouth_dir_var.get(),
             "coverage": float(self.coverage_var.get()),
             "pad": float(self.pad_var.get()),
@@ -1046,6 +1060,7 @@ class App(tk.Tk):
         self._save_session({
             "video": self.video_var.get(),
             "source_video": self.video_var.get(),
+            "stabilize_tracking": bool(self.stabilize_tracking_var.get()),
             "mouth_dir": self.mouth_dir_var.get(),
             "coverage": float(self.coverage_var.get()),
             "pad": float(self.pad_var.get()),
@@ -1429,6 +1444,7 @@ class App(tk.Tk):
                     mouth_edge_priority=color_cfg.edge_priority,
                     mouth_edge_width_ratio=color_cfg.edge_width_ratio,
                     mouth_inspect_boost=color_cfg.inspect_boost,
+                    stabilize_before_track=bool(self.stabilize_tracking_var.get()),
                 )
                 print("[debug] after plan_track_and_calib", flush=True)
                 self.log("[debug] on_track_and_calib execute start")

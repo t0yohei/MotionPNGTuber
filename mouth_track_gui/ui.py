@@ -58,6 +58,7 @@ class UiVars:
     audio_device_menu: tk.StringVar
     emotion_preset: tk.StringVar
     emotion_hud: tk.BooleanVar
+    stabilize_tracking: tk.BooleanVar
     progress: tk.DoubleVar
     progress_text: tk.StringVar
 
@@ -309,6 +310,21 @@ def build_ui(
     ttk.Label(
         frm,
         text="顔揺れが強い素材は『安定重視（1.0）』→ まだ厳しければ『超安定（0.8）』がおすすめ",
+        font=("", 9),
+    ).pack(anchor="w", pady=(0, 8))
+
+    row3c = ttk.Frame(frm)
+    row3c.pack(fill="x", pady=(0, 8))
+    chk_stabilize = ttk.Checkbutton(
+        row3c,
+        text="前処理 stabilize を使う（ffmpeg / 顔揺れが強い素材向け）",
+        variable=vars.stabilize_tracking,
+        command=lambda: callbacks.save_session({"stabilize_tracking": bool(vars.stabilize_tracking.get())}),
+    )
+    chk_stabilize.pack(side="left")
+    ttk.Label(
+        frm,
+        text="解析前に deshake をかけた動画を作って、その動画を基準に track / キャリブします。揺れが大きい素材でおすすめ。",
         font=("", 9),
     ).pack(anchor="w", pady=(0, 8))
 
