@@ -33,7 +33,9 @@ SESSION_KEYS: frozenset[str] = frozenset({
     "character",        # character sub-folder name
     "emotion_preset",   # emotion preset label
     "emotion_hud",      # bool – show emotion HUD
-    "coverage",         # float 0.40–0.90
+    "stabilize_tracking",  # bool – ffmpeg deshake before tracking/calibration
+    "stabilized_video",    # path to stabilized intermediate video
+    "coverage",         # float 0.20–0.90
     "pad",              # float 1.00–3.00
     "mouth_brightness",     # float -32..32
     "mouth_saturation",     # float 0.70..1.50

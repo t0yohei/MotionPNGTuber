@@ -155,6 +155,7 @@ class CommandRunner:
             popen_kw["start_new_session"] = True
 
         self._on_log("[cmd] " + " ".join(cmd))
+        self._on_log(f"[debug] run_stream cwd={cwd or os.getcwd()}")
 
         try:
             p = subprocess.Popen(
@@ -177,6 +178,8 @@ class CommandRunner:
 
         with self._lock:
             self._active_proc = p
+
+        self._on_log(f"[debug] child pid={p.pid}")
 
         drain = DrainResult(was_stopped=False, stop_requested=False)
         try:

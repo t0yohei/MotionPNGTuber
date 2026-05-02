@@ -58,6 +58,7 @@ class UiVars:
     audio_device_menu: tk.StringVar
     emotion_preset: tk.StringVar
     emotion_hud: tk.BooleanVar
+    stabilize_tracking: tk.BooleanVar
     progress: tk.DoubleVar
     progress_text: tk.StringVar
 
@@ -110,8 +111,32 @@ def build_ui(
     via the callbacks parameter.
     """
     pad = 10
-    frm = ttk.Frame(parent)
-    frm.pack(fill="both", expand=True, padx=pad, pady=pad)
+    outer = ttk.Frame(parent)
+    outer.pack(fill="both", expand=True)
+
+    canvas = tk.Canvas(outer, highlightthickness=0)
+    v_scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=v_scroll.set)
+
+    v_scroll.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
+
+    frm = ttk.Frame(canvas, padding=pad)
+    window_id = canvas.create_window((0, 0), window=frm, anchor="nw")
+
+    def _sync_scrollregion(_event=None) -> None:
+        canvas.configure(scrollregion=canvas.bbox("all"))
+
+    def _sync_width(event) -> None:
+        canvas.itemconfigure(window_id, width=event.width)
+
+    def _on_mousewheel(event) -> None:
+        if event.delta:
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+
+    frm.bind("<Configure>", _sync_scrollregion)
+    canvas.bind("<Configure>", _sync_width)
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
     # --- Quick guide / recommended flow ---
     guide = ttk.LabelFrame(frm, text="おすすめの流れ", padding=8)
@@ -215,14 +240,21 @@ def build_ui(
     pad_value_label.pack(side="left")
     vars.pad.trace_add("write", _save_pad)
 
+    row_adv_pad_presets = ttk.Frame(advanced_body)
+    row_adv_pad_presets.pack(fill="x", pady=(0, 6))
+    ttk.Label(row_adv_pad_presets, text="おすすめ").pack(side="left")
+    ttk.Button(row_adv_pad_presets, text="揺れ向け 1.8", command=lambda: vars.pad.set(1.8)).pack(side="left", padx=(8, 4))
+    ttk.Button(row_adv_pad_presets, text="標準 2.1", command=lambda: vars.pad.set(2.1)).pack(side="left", padx=4)
+    ttk.Button(row_adv_pad_presets, text="広め 2.4", command=lambda: vars.pad.set(2.4)).pack(side="left", padx=4)
+
     ttk.Label(
         advanced_body,
         text=(
             "普段は 2.1 のままでOKです。\n"
+            "・顔揺れが強い / 頬や顎を巻き込みやすい → 少し下げる（例: 1.8〜2.0）\n"
             "・口PNGが小さく見える / 口の端が切れる → 少し上げる（例: 2.3〜2.6）\n"
-            "・口が大きすぎる / 顎や頬まで拾う → 少し下げる（例: 1.8〜2.0）\n"
             "※ この設定は主に『① 解析→キャリブ』の口配置サイズに効きます。\n"
-            "※ 『見た目確認（軽量）』で 1.9 / 2.1 / 2.3 前後を見比べてから決めるのがおすすめです。"
+            "※ 『見た目確認（軽量）』で 1.8 / 2.1 / 2.4 前後を見比べてから決めるのがおすすめです。"
         ),
         justify="left",
         font=("", 9),
@@ -262,7 +294,7 @@ def build_ui(
     row3 = ttk.Frame(frm)
     row3.pack(fill="x", pady=(0, 8))
     ttk.Label(row3, text="口消し範囲").pack(side="left")
-    ttk.Scale(row3, from_=0.40, to=0.90, variable=vars.coverage, orient="horizontal").pack(
+    ttk.Scale(row3, from_=0.20, to=0.90, variable=vars.coverage, orient="horizontal").pack(
         side="left", fill="x", expand=True, padx=8,
     )
     cov_label = ttk.Label(row3, text=f"{vars.coverage.get():.2f}")
@@ -299,6 +331,26 @@ def build_ui(
         "<<ComboboxSelected>>",
         lambda _evt=None: callbacks.save_session({"smoothing": vars.smoothing_menu.get()}),
     )
+    ttk.Label(
+        frm,
+        text="顔揺れが強い素材は『安定重視（1.0）』→ まだ厳しければ『超安定（0.8）』がおすすめ",
+        font=("", 9),
+    ).pack(anchor="w", pady=(0, 8))
+
+    row3c = ttk.Frame(frm)
+    row3c.pack(fill="x", pady=(0, 8))
+    chk_stabilize = ttk.Checkbutton(
+        row3c,
+        text="前処理 stabilize を使う（ffmpeg / 顔揺れが強い素材向け）",
+        variable=vars.stabilize_tracking,
+        command=lambda: callbacks.save_session({"stabilize_tracking": bool(vars.stabilize_tracking.get())}),
+    )
+    chk_stabilize.pack(side="left")
+    ttk.Label(
+        frm,
+        text="解析前に deshake をかけた動画を作って、その動画を基準に track / キャリブします。揺れが大きい素材でおすすめ。",
+        font=("", 9),
+    ).pack(anchor="w", pady=(0, 8))
 
     # --- Audio device ---
     row4 = ttk.Frame(frm)

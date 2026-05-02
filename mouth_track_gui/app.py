@@ -93,6 +93,8 @@ from motionpngtuber.mouth_color_adjust import (
 # --- smoothing presets (GUI) ---
 SMOOTHING_PRESETS: dict[str, float | None] = {
     "Auto（今のまま）": None,  # pass nothing -> keep current default behavior
+    "超安定（0.8）": 0.8,
+    "安定重視（1.0）": 1.0,
     "ゆっくり（1.5）": 1.5,
     "普通（3.0）": 3.0,
     "高速（6.0）": 6.0,
@@ -123,6 +125,7 @@ class App(tk.Tk):
         self.geometry("1180x860")
 
         self.log_q: "queue.Queue[str]" = queue.Queue()
+        self.ui_task_q: "queue.Queue[tuple[str, tuple]]" = queue.Queue()
         self.worker_thread: threading.Thread | None = None
         self.stop_flag = threading.Event()
         self.active_proc: subprocess.Popen | None = None  # legacy; use runner
@@ -158,7 +161,8 @@ class App(tk.Tk):
         self.emotion_preset_var = tk.StringVar(value=_ep)
 
         self.emotion_hud_var = tk.BooleanVar(value=safe_bool(sess.get("emotion_hud", False), default=False))
-        self.coverage_var = tk.DoubleVar(value=safe_float(sess.get("coverage", 0.60), 0.60, min_v=0.40, max_v=0.90))
+        self.stabilize_tracking_var = tk.BooleanVar(value=safe_bool(sess.get("stabilize_tracking", False), default=False))
+        self.coverage_var = tk.DoubleVar(value=safe_float(sess.get("coverage", 0.60), 0.60, min_v=0.20, max_v=0.90))
         self.mouth_brightness_var = tk.DoubleVar(
             value=safe_float(sess.get("mouth_brightness", 0.0), 0.0, min_v=-32.0, max_v=32.0),
         )
@@ -244,6 +248,7 @@ class App(tk.Tk):
             audio_device_menu=self.audio_device_menu_var,
             emotion_preset=self.emotion_preset_var,
             emotion_hud=self.emotion_hud_var,
+            stabilize_tracking=self.stabilize_tracking_var,
             progress=self.progress_var,
             progress_text=self.progress_text_var,
         )
@@ -630,6 +635,22 @@ class App(tk.Tk):
                 self.txt.configure(state="disabled")
         except queue.Empty:
             pass
+
+        try:
+            while True:
+                kind, args = self.ui_task_q.get_nowait()
+                if kind == "set_running":
+                    self._set_running(*args)
+                elif kind == "show_error":
+                    self._show_error(*args)
+                elif kind == "show_warn":
+                    self._show_warn(*args)
+                elif kind == "progress_begin":
+                    self._progress_begin(*args)
+                elif kind == "progress_step":
+                    self._progress_step(*args)
+        except queue.Empty:
+            pass
         self.after(100, self._poll_logs)
 
     def _clear_log(self) -> None:
@@ -905,10 +926,16 @@ class App(tk.Tk):
         self.after(0, _apply)
 
     def _show_error(self, title: str, msg: str) -> None:
-        self.after(0, lambda: messagebox.showerror(title, msg))
+        if threading.current_thread() is threading.main_thread():
+            messagebox.showerror(title, msg)
+        else:
+            self.ui_task_q.put(("show_error", (title, msg)))
 
     def _show_warn(self, title: str, msg: str) -> None:
-        self.after(0, lambda: messagebox.showwarning(title, msg))
+        if threading.current_thread() is threading.main_thread():
+            messagebox.showwarning(title, msg)
+        else:
+            self.ui_task_q.put(("show_warn", (title, msg)))
 
     def _apply_preview_selection(self, pad: float, coverage: float) -> None:
         pad_v = round(float(pad), 2)
@@ -927,7 +954,7 @@ class App(tk.Tk):
         source_video: str | None = None,
     ) -> WorkflowPaths | None:
         paths, err = build_workflow_paths(
-            source_video if source_video is not None else self.video_var.get().strip(),
+            source_video if source_video is not None else self._workflow_source_video(),
             require_track=require_track,
             require_calibrated=require_calibrated,
             prefer_calibrated=prefer_calibrated,
@@ -936,6 +963,16 @@ class App(tk.Tk):
             self._show_error("エラー", err)
             return None
         return paths
+
+    def _workflow_source_video(self) -> str:
+        base_video = self.video_var.get().strip()
+        if not bool(self.stabilize_tracking_var.get()):
+            return base_video
+        sess = load_session()
+        stabilized = str(sess.get("stabilized_video", "") or "").strip()
+        if stabilized and os.path.isfile(stabilized):
+            return stabilized
+        return base_video
 
     def _resolve_mouth_root_value(self, mouth_root: str) -> str | None:
         path, err = validate_existing_dir(
@@ -1002,6 +1039,8 @@ class App(tk.Tk):
         self._save_session({
             "video": self.video_var.get(),
             "source_video": self.video_var.get(),
+            "stabilize_tracking": bool(self.stabilize_tracking_var.get()),
+            "stabilized_video": "",
             "mouth_dir": self.mouth_dir_var.get(),
             "coverage": float(self.coverage_var.get()),
             "pad": float(self.pad_var.get()),
@@ -1021,6 +1060,7 @@ class App(tk.Tk):
         self._save_session({
             "video": self.video_var.get(),
             "source_video": self.video_var.get(),
+            "stabilize_tracking": bool(self.stabilize_tracking_var.get()),
             "mouth_dir": self.mouth_dir_var.get(),
             "coverage": float(self.coverage_var.get()),
             "pad": float(self.pad_var.get()),
@@ -1074,13 +1114,18 @@ class App(tk.Tk):
         and post-actions.  Returns the return code of the last executed step.
         """
         if plan.session_init:
+            print("[debug] _execute_plan before _save_session", flush=True)
             self._save_session(plan.session_init)
+            print("[debug] _execute_plan after _save_session", flush=True)
 
-        self._progress_begin(plan.total_steps, f"{plan.name}準備中…")
+        print("[debug] _execute_plan before _progress_begin enqueue", flush=True)
+        self.ui_task_q.put(("progress_begin", (plan.total_steps, f"{plan.name}準備中…")))
+        print("[debug] _execute_plan after _progress_begin enqueue", flush=True)
 
         last_rc = 0
         skipped = False
         for i, step in enumerate(plan.steps, 1):
+            print(f"[debug] _execute_plan step {i} label={step.label}", flush=True)
             if step.skip_on_stop and self.runner.soft_requested:
                 prog = step.progress_label or step.label
                 self.log(f"[info] 停止予約のため、{prog}以降をスキップします。")
@@ -1096,11 +1141,13 @@ class App(tk.Tk):
                 self.log(step.pre_log)
 
             prog = step.progress_label or step.label
-            self._progress_step(i, f"{prog}中… ({i}/{plan.total_steps})")
+            self.ui_task_q.put(("progress_step", (i, f"{prog}中… ({i}/{plan.total_steps})")))
 
+            print(f"[debug] before run_stream step {i}", flush=True)
             result = self.runner.run_stream(
                 step.cmd, cwd=step.cwd, allow_soft_stop=step.allow_soft_stop,
             )
+            print(f"[debug] after run_stream step {i} rc={result.returncode}", flush=True)
             last_rc = result.returncode
 
             # ``was_stopped`` is reserved for cases where this step's child
@@ -1114,14 +1161,15 @@ class App(tk.Tk):
                     if self.stop_mode == "force"
                     else "[info] 停止しました。"
                 )
-                self._progress_step(i, f"{prog}停止")
+                self.ui_task_q.put(("progress_step", (i, f"{prog}停止")))
                 break
 
+            print(f"[debug] before expected_outputs check step {i}", flush=True)
             if last_rc != 0 or any(
                 not os.path.isfile(p) for p in step.expected_outputs
             ):
                 if step.error_msg:
-                    self._show_error("失敗", f"{step.error_msg} (rc={last_rc})")
+                    self.ui_task_q.put(("show_error", ("失敗", f"{step.error_msg} (rc={last_rc})")))
                 return last_rc
 
             self._progress_step(i, f"{prog}完了 ({i}/{plan.total_steps})")
@@ -1293,43 +1341,87 @@ class App(tk.Tk):
 
     # ----- workflow buttons -----
     def _start_worker(self, target) -> None:
+        print("[debug] _start_worker called", flush=True)
+        self.log("[debug] _start_worker called")
         if self.worker_thread and self.worker_thread.is_alive():
+            print("[debug] worker already alive", flush=True)
+            self.log("[debug] worker already alive")
             return
         self.stop_flag.clear()
         self.runner.reset()
         self._set_stop_mode("none")
         self._set_running(True)
         def runner():
+            print("[debug] worker runner entered", flush=True)
+            self.log("[debug] worker runner entered")
             try:
                 target()
+                print("[debug] worker runner target returned", flush=True)
+                self.log("[debug] worker runner target returned")
+            except Exception as e:
+                print(f"[debug] worker runner exception: {e}", flush=True)
+                self.log(f"[debug] worker runner exception: {e}")
+                raise
             finally:
-                # ワーカーが何で終わっても UI を戻す
-                self._set_running(False)
+                print("[debug] worker runner finalize", flush=True)
+                self.log("[debug] worker runner finalize")
+                # ワーカーが何で終わっても UI を戻す（メインスレッドで実行）
+                self.ui_task_q.put(("set_running", (False,)))
         self.worker_thread = threading.Thread(target=runner, daemon=True)
         self.worker_thread.start()
 
     def on_track_and_calib(self) -> None:
+        print("[debug] on_track_and_calib clicked", flush=True)
+        self.log("[debug] on_track_and_calib clicked")
         def _worker():
             try:
+                print("[debug] on_track_and_calib worker start", flush=True)
+                self.log("[debug] on_track_and_calib worker start")
                 base_dir = HERE
+                print("[debug] before ensure_backend_sanity", flush=True)
+                self.log("[debug] before ensure_backend_sanity")
                 ok, msg = ensure_backend_sanity(base_dir)
+                print(f"[debug] after ensure_backend_sanity ok={ok}", flush=True)
+                self.log(f"[debug] after ensure_backend_sanity ok={ok}")
                 if not ok:
-                    self._show_error("エラー", msg)
+                    self.ui_task_q.put(("show_error", ("エラー", msg)))
                     return
+                print("[debug] before _resolve_workflow_paths", flush=True)
+                self.log("[debug] before _resolve_workflow_paths")
                 paths = self._resolve_workflow_paths()
+                print(f"[debug] after _resolve_workflow_paths is_none={paths is None}", flush=True)
+                self.log(f"[debug] after _resolve_workflow_paths is_none={paths is None}")
                 if paths is None:
                     return
+                print("[debug] before _resolve_mouth_root", flush=True)
+                self.log("[debug] before _resolve_mouth_root")
                 mouth_dir = self._resolve_mouth_root(auto_fill=True)
+                print(f"[debug] after _resolve_mouth_root is_none={mouth_dir is None}", flush=True)
+                self.log(f"[debug] after _resolve_mouth_root is_none={mouth_dir is None}")
                 if mouth_dir is None:
                     return
+                print("[debug] before _resolve_character_for_action", flush=True)
+                self.log("[debug] before _resolve_character_for_action")
                 char = self._resolve_character_for_action()
+                print(f"[debug] after _resolve_character_for_action is_none={char is None}", flush=True)
+                self.log(f"[debug] after _resolve_character_for_action is_none={char is None}")
                 if char is None:
                     return
+                print("[debug] before _resolve_open_sprite", flush=True)
+                self.log("[debug] before _resolve_open_sprite")
                 open_sprite = self._resolve_open_sprite(mouth_dir, char)
+                print(f"[debug] after _resolve_open_sprite is_none={open_sprite is None}", flush=True)
+                self.log(f"[debug] after _resolve_open_sprite is_none={open_sprite is None}")
                 if open_sprite is None:
                     return
+                print("[debug] before _build_mouth_color_adjust", flush=True)
+                self.log("[debug] before _build_mouth_color_adjust")
                 color_cfg = self._build_mouth_color_adjust()
+                print("[debug] after _build_mouth_color_adjust", flush=True)
+                self.log("[debug] after _build_mouth_color_adjust")
 
+                self.log("[debug] on_track_and_calib plan build start")
+                print("[debug] before plan_track_and_calib", flush=True)
                 plan = plan_track_and_calib(
                     base_dir=base_dir,
                     video=paths.source_video,
@@ -1352,10 +1444,17 @@ class App(tk.Tk):
                     mouth_edge_priority=color_cfg.edge_priority,
                     mouth_edge_width_ratio=color_cfg.edge_width_ratio,
                     mouth_inspect_boost=color_cfg.inspect_boost,
+                    stabilize_before_track=bool(self.stabilize_tracking_var.get()),
                 )
+                print("[debug] after plan_track_and_calib", flush=True)
+                self.log("[debug] on_track_and_calib execute start")
+                print("[debug] before _execute_plan", flush=True)
                 self._execute_plan(plan)
+                print("[debug] after _execute_plan", flush=True)
+                self.log("[debug] on_track_and_calib execute done")
             except Exception as e:
-                self._show_error("エラー", str(e))
+                self.log(f"[debug] on_track_and_calib exception: {e}")
+                self.ui_task_q.put(("show_error", ("エラー", str(e))))
         self._start_worker(_worker)
 
     def on_calib_only(self) -> None:
@@ -1487,7 +1586,28 @@ class App(tk.Tk):
                 except Exception as e:
                     self.log(f"[warn] 見た目確認用 open.png の解決に失敗しました: {e}")
 
-                from .preview import run_erase_range_preview
+                from .preview import export_erase_range_preview_image, run_erase_range_preview
+
+                if sys.platform == "darwin":
+                    stem = os.path.splitext(os.path.basename(paths.source_video))[0]
+                    out_path = os.path.join(paths.out_dir, f"{stem}_look_preview.png")
+                    saved = export_erase_range_preview_image(
+                        video=paths.source_video,
+                        track_path=track_path,
+                        track_npz=paths.track_npz,
+                        calib_npz=paths.calib_npz,
+                        coverage=float(self.coverage_var.get()),
+                        preview_pad=float(self.pad_var.get()),
+                        open_sprite=open_sprite,
+                        color_adjust=self._build_mouth_color_adjust(),
+                        out_path=out_path,
+                        log_fn=self.log,
+                        show_error=self._show_error,
+                    )
+                    if saved:
+                        self.log("[info] macOS では静止画プレビューを出力しました。")
+                        open_path_with_default_app(saved)
+                    return
 
                 selection = run_erase_range_preview(
                     video=paths.source_video,

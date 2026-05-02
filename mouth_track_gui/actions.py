@@ -13,6 +13,7 @@ Usage from App::
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 
 from motionpngtuber.python_exec import resolve_python_subprocess_executable
@@ -85,7 +86,7 @@ def build_track_cmd(
         "--det-scale", "1.0",
         "--min-conf", "0.5",
         "--early-stop",
-        "--max-tries", "4",
+        "--max-tries", "6",
     ]
     if smoothing_cutoff is not None:
         cmd += ["--smooth-cutoff", str(smoothing_cutoff)]
@@ -125,9 +126,38 @@ def build_calib_cmd(
     ]
 
 
+def build_stabilize_cmd(
+    video: str,
+    stabilized_video: str,
+) -> list[str]:
+    """Build an ffmpeg deshake command for pre-track stabilization.
+
+    The stabilized intermediate is only used for tracking/calibration, so keep
+    it video-only and prefer broadly available codecs over platform-specific
+    encoder setups.
+    """
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError(
+            "ffmpeg が見つからないため前処理 stabilize を実行できません。PATH を確認してください。",
+        )
+    return [
+        ffmpeg,
+        "-y",
+        "-i", video,
+        "-map", "0:v:0",
+        "-an",
+        "-vf", "deshake=rx=16:ry=16:edge=mirror",
+        "-c:v", "mpeg4",
+        "-q:v", "2",
+        "-pix_fmt", "yuv420p",
+        stabilized_video,
+    ]
+
+
 def build_erase_coverage_arg(coverage: float) -> str:
     """Compute the multi-coverage argument string for auto_erase_mouth.py."""
-    covs = [max(0.40, min(0.90, coverage + x)) for x in (0.0, 0.10, 0.20)]
+    covs = [max(0.20, min(0.90, coverage + x)) for x in (0.0, 0.10, 0.20)]
     covs = sorted(set(round(x, 2) for x in covs))
     return ",".join(f"{x:.2f}" for x in covs)
 
@@ -278,14 +308,31 @@ def plan_track_and_calib(
     mouth_edge_width_ratio: float,
     mouth_inspect_boost: float,
     audio_device_spec: str = "",
+    stabilize_before_track: bool = False,
 ) -> ActionPlan:
     """Build an ActionPlan for track + calibrate workflow."""
-    return ActionPlan(
-        name="解析/キャリブ",
-        steps=(
+    video_dir = os.path.dirname(os.path.abspath(video))
+    video_stem = os.path.splitext(os.path.basename(video))[0]
+    stabilized_video = os.path.join(video_dir, f"{video_stem}_stabilized.mp4")
+    analysis_video = stabilized_video if stabilize_before_track else video
+    steps: list[ActionStep] = []
+    if stabilize_before_track:
+        steps.append(
+            ActionStep(
+                cmd=build_stabilize_cmd(video, stabilized_video),
+                label="前処理 stabilize（顔揺れ補正）",
+                progress_label="stabilize",
+                cwd=base_dir,
+                expected_outputs=(stabilized_video,),
+                allow_soft_stop=True,
+                error_msg="前処理 stabilize に失敗しました",
+                pre_log="ffmpeg deshake で解析前の動画揺れを軽減します。",
+            ),
+        )
+    steps.extend([
             ActionStep(
                 cmd=build_track_cmd(
-                    base_dir, video, track_npz, pad,
+                    base_dir, analysis_video, track_npz, pad,
                     smoothing_cutoff=smoothing_cutoff,
                 ),
                 label="解析（自動修復つき・最高品質）",
@@ -301,7 +348,7 @@ def plan_track_and_calib(
             ),
             ActionStep(
                 cmd=build_calib_cmd(
-                    base_dir, video, track_npz, open_sprite, calib_npz,
+                    base_dir, analysis_video, track_npz, open_sprite, calib_npz,
                     mouth_brightness=mouth_brightness,
                     mouth_saturation=mouth_saturation,
                     mouth_warmth=mouth_warmth,
@@ -318,10 +365,15 @@ def plan_track_and_calib(
                 error_msg="キャリブに失敗しました",
                 skip_on_stop=True,
             ),
-        ),
+        ])
+    return ActionPlan(
+        name="解析/キャリブ",
+        steps=tuple(steps),
         session_init={
-            "video": video,
-            "source_video": video,
+            "video": analysis_video,
+            "source_video": analysis_video,
+            "stabilize_tracking": stabilize_before_track,
+            "stabilized_video": stabilized_video if stabilize_before_track else "",
             "mouth_dir": mouth_dir,
             "coverage": coverage,
             "pad": pad,
