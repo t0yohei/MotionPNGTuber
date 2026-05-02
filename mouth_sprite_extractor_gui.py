@@ -1980,8 +1980,7 @@ class MouthSpriteExtractorApp(tk.Tk if not _HAS_TK_DND else TkinterDnD.Tk):
         
         self.log(f"動画を選択: {os.path.basename(path)}")
         if self.player_total_frames > 0:
-            self.log("動画選択後に自動で解析を開始します...")
-            self.after(50, self._on_analyze)
+            self.log("動画を選択しました。『解析開始』で解析を実行してください。")
     
     def _clear_candidates(self):
         """候補表示をクリア"""
